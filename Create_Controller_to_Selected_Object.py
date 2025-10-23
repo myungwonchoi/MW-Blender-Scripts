@@ -11,7 +11,10 @@ else:
     
     # 3. 새로 생성된 Empty 오브젝트를 참조합니다. (Child Of Constraint의 타겟)
     new_empty = bpy.context.view_layer.objects.active
-    new_empty.name = active_obj.name + "_Empty" 
+    new_empty.name = "CTRL_" + active_obj.name
+    
+    # 3-1. Empty의 viewport display 설정: In Front 활성화
+    new_empty.show_in_front = True
     
     # 4. 트랜스폼(위치, 회전, 스케일)을 복사하고 부모 관계를 상속합니다.
     # Empty가 원본 오브젝트와 완벽하게 겹치게 됩니다.
