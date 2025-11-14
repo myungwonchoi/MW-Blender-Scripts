@@ -65,18 +65,47 @@ def create_controller_for_object(target_obj):
     if target_obj.parent:
         new_empty.matrix_parent_inverse = target_obj.parent.matrix_world.inverted()
         
-    # --- 콜렉션 처리 (이전 로직 유지) ---
+    # --- 콜렉션 처리 (오버라이드된 콜렉션 예외 처리 추가) ---
     target_collections = target_obj.users_collection
     current_collections = list(new_empty.users_collection)
 
+    # 안전하게 콜렉션에 링크 시도
     for col in target_collections:
-        if new_empty.name not in col.objects: 
-            col.objects.link(new_empty)
+        if new_empty.name not in col.objects:
+            try:
+                # 콜렉션이 오버라이드되었거나 링크된 경우 예외 처리
+                if col.library or col.override_library:
+                    print(f"WARNING: 콜렉션 '{col.name}'은(는) 링크되었거나 오버라이드된 상태입니다. 건너뜁니다.")
+                    continue
+                col.objects.link(new_empty)
+                print(f"INFO: Empty '{new_empty.name}'을(를) 콜렉션 '{col.name}'에 추가했습니다.")
+            except RuntimeError as e:
+                print(f"WARNING: 콜렉션 '{col.name}'에 Empty를 링크하는데 실패했습니다: {e}")
+                continue
 
+    # 불필요한 콜렉션에서 언링크 시도
     for col in current_collections:
         if col not in target_collections:
             if new_empty.name in col.objects:
-                col.objects.unlink(new_empty)
+                try:
+                    if col.library or col.override_library:
+                        print(f"WARNING: 콜렉션 '{col.name}'은(는) 링크되었거나 오버라이드된 상태입니다. 언링크를 건너뜁니다.")
+                        continue
+                    col.objects.unlink(new_empty)
+                    print(f"INFO: Empty '{new_empty.name}'을(를) 콜렉션 '{col.name}'에서 제거했습니다.")
+                except RuntimeError as e:
+                    print(f"WARNING: 콜렉션 '{col.name}'에서 Empty를 언링크하는데 실패했습니다: {e}")
+                    continue
+    
+    # 만약 모든 대상 콜렉션이 오버라이드되어 있다면, Scene 콜렉션에 추가
+    if new_empty.name not in [obj.name for col in target_collections for obj in col.objects]:
+        try:
+            scene_collection = bpy.context.scene.collection
+            if new_empty.name not in scene_collection.objects:
+                scene_collection.objects.link(new_empty)
+                print(f"INFO: 대상 콜렉션들이 모두 제한되어 있어 Empty '{new_empty.name}'을(를) Scene 콜렉션에 추가했습니다.")
+        except RuntimeError as e:
+            print(f"ERROR: Scene 콜렉션에도 Empty를 추가할 수 없습니다: {e}")
     
     # --- 추가된 부분: Child Of Constraint 설정 ---
     
