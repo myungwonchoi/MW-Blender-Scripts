@@ -83,8 +83,6 @@ def create_armature_with_following_bones():
     # 생성된 아마추어와 모든 타겟 오브젝트들을 선택
     bpy.ops.object.select_all(action='DESELECT')
     armature_obj.select_set(True)
-    for target_obj in target_objects:
-        target_obj.select_set(True)
     
     # 아마추어를 액티브로 설정
     bpy.context.view_layer.objects.active = armature_obj

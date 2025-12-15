@@ -10,9 +10,33 @@
 7. 종료
 8. Unit Scale을 원래 값으로 수동 복원 필요
 """
+
 import bpy
 import bmesh
 from mathutils import Vector
+
+def get_all_fcurves(action):
+    """
+    Blender 5.0+ 호환성을 위한 F-Curve 가져오기 헬퍼 함수
+    Action.fcurves (Legacy) 또는 Action.slots -> channelbag (New)를 모두 지원
+    """
+    # 1. Legacy API (Blender 4.x 이하)
+    if hasattr(action, "fcurves"):
+        return action.fcurves
+    
+    # 2. New API (Blender 5.0+ Slotted Actions)
+    fcurves = []
+    if hasattr(action, "slots"):
+        try:
+            from bpy_extras import anim_utils
+            for slot in action.slots:
+                channelbag = anim_utils.action_get_channelbag_for_slot(action, slot)
+                if channelbag:
+                    fcurves.extend(channelbag.fcurves)
+        except ImportError:
+            pass
+            
+    return fcurves
 
 def convert_armature_for_unreal():
     # 현재 선택된 오브젝트들 확인
@@ -60,7 +84,7 @@ def convert_armature_for_unreal():
     # 아마추어와 연결된 모든 메시 찾기 (부모 관계, 아마추어 모디파이어, 버텍스 그룹 등)
     connected_meshes = []
     
-    for obj in bpy.data.objects:
+    for obj in bpy.context.view_layer.objects:
         if obj.type == 'MESH':
             is_connected = False
             
@@ -115,6 +139,7 @@ def convert_armature_for_unreal():
         return {'CANCELLED'}
     
     print(f"복사된 아마추어: {copied_armature.name}")
+
     
     # 2. Pose 기반 Bake Action으로 컨스트레인트 제거
     bpy.context.view_layer.objects.active = copied_armature
@@ -143,8 +168,8 @@ def convert_armature_for_unreal():
     
     bpy.ops.object.mode_set(mode='OBJECT')
     
-    # 3. 아마추어 이름을 Root로 변경하고 100배 스케일
-    copied_armature.name = "Root"
+    # 3. 아마추어 이름을 Root로 변  경하고 100배 스케일
+    copied_armature.name = "Armature"
     copied_armature.scale = (100, 100, 100)
     
     print("아마추어 이름을 Root로 변경하고 100배 스케일 적용")
@@ -166,7 +191,7 @@ def convert_armature_for_unreal():
         action = copied_armature.animation_data.action
         location_curves_updated = 0
         
-        for fcurve in action.fcurves:
+        for fcurve in get_all_fcurves(action):
             if fcurve.data_path.endswith('location'):
                 for keyframe in fcurve.keyframe_points:
                     keyframe.co.y *= 100
@@ -176,6 +201,25 @@ def convert_armature_for_unreal():
         
         print(f"Location 키프레임 {location_curves_updated}개 곡선에 100배 적용")
     
+    # 6. 새로운 Empty 생성 및 페어런트 (Unit Scale 변경 대신)
+    empty = bpy.data.objects.new(f"Empty_UE_Armature", None)
+    if copied_armature.users_collection:
+        copied_armature.users_collection[0].objects.link(empty)
+    else:
+        bpy.context.collection.objects.link(empty)
+    
+    empty.scale = (0.01, 0.01, 0.01)
+    
+    # 아마추어를 Empty에 페어런트
+    copied_armature.parent = empty
+    
+    # 메시들도 확인하여 페어런트 (아마추어의 자식이 아닌 경우)
+    for obj in copied_objects:
+        if obj.type == 'MESH' and obj.parent != copied_armature:
+            obj.parent = empty
+    
+    print("Empty 생성 및 페어런트 완료 (시각적 크기 복원)")
+
     # 최종 선택 상태 설정 - 스켈레탈 메시와 하위 메시들을 모두 선택
     bpy.ops.object.select_all(action='DESELECT')
     
@@ -186,29 +230,9 @@ def convert_armature_for_unreal():
             obj.select_set(True)
     
     bpy.context.view_layer.objects.active = copied_armature
-    
-    print("언리얼 엔진용 아마추어 변환 완료!")
-    print(f"변환된 아마추어: {copied_armature.name}")
-    print("선택된 오브젝트들을 FBX로 익스포트할 수 있습니다.")
-    
-    # Unit Scale을 0.01로 변경
-    original_unit_scale = bpy.context.scene.unit_settings.scale_length
-    bpy.context.scene.unit_settings.scale_length = 0.01
-    print(f"Unit Scale을 {original_unit_scale}에서 0.01로 변경했습니다.")
-    
-    # FBX 익스포트 다이얼로그 창 열기 (기본 설정)
-    try:
-        bpy.ops.export_scene.fbx('INVOKE_DEFAULT')
-        print("FBX 익스포트 다이얼로그가 열렸습니다.")
-        print(f"참고: Unit Scale이 0.01로 설정되어 있습니다. 필요시 수동으로 {original_unit_scale}로 되돌려 주세요.")
-        
-    except Exception as e:
-        print(f"FBX 익스포트 다이얼로그 열기 실패: {e}")
-        print("수동으로 File > Export > FBX (.fbx)를 선택하여 익스포트하세요.")
-        print(f"참고: Unit Scale이 0.01로 설정되어 있습니다. 필요시 수동으로 {original_unit_scale}로 되돌려 주세요.")
-    
+
     return {'FINISHED'}
 
 # 메인 실행 부분
 if __name__ == "__main__":
-    convert_armature_for_unreal()
+    convert_armature_for_unreal()   
